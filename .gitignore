@@ -1,2 +1,6 @@
 .claude
-target/*
+target/
+vendor/
+targets.txt
+output.txt
+todo
