@@ -1,5 +1,5 @@
 use super::task::Task;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -80,11 +80,7 @@ where
         .collect())
 }
 
-fn schedule_task<T>(
-    task: Arc<T>,
-    target: String,
-    index: usize,
-) -> TaskFuture
+fn schedule_task<T>(task: Arc<T>, target: String, index: usize) -> TaskFuture
 where
     T: Task + 'static,
     T::Error: fmt::Display,

@@ -4,3 +4,4 @@ vendor/
 targets.txt
 output.txt
 todo
+*.py

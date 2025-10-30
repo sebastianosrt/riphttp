@@ -1,10 +1,13 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use riphttplib::types::{Header, ProtocolError, Request, Response};
 use riphttplib::utils::{convert_escape_sequences, parse_header};
 use riphttplib::{H1, H2, H3};
 use scanner::scanner::{ScanOutput, TargetScanner};
 use std::io::{self, Write};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
 
@@ -13,6 +16,7 @@ mod modules;
 mod scanner;
 use core::utils::load_targets;
 use modules::trailmerge::TrailMergeTask;
+use modules::trailsmug::TrailSmugTask;
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 
@@ -55,6 +59,9 @@ struct ClientArgs {
     /// Method
     #[clap(short, long)]
     method: Option<String>,
+    /// Perform a HEAD request (similar to curl -I)
+    #[clap(short = 'I', long)]
+    head: bool,
     /// Proxy to use
     #[clap(short, long)]
     proxy: Option<String>,
@@ -85,11 +92,20 @@ struct TrailersScanArgs {
     #[clap(short, long, default_value = "output.txt")]
     output: String,
     /// Number of threads
-    #[clap(long, default_value = "100")]
+    #[clap(long, default_value = "500")]
     threads: usize,
     /// Proxy to use
     #[clap(long)]
     proxy: Option<String>,
+    /// Scanner mode to use
+    #[clap(long, value_enum, default_value_t = ScanMode::TrailMerge)]
+    mode: ScanMode,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ScanMode {
+    TrailMerge,
+    TrailSmug,
 }
 
 #[tokio::main]
@@ -108,33 +124,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Running trailers scan in verbose mode");
             }
 
-            let targets = load_targets(&scan_args.targets).await?;
-            println!("Loaded {} targets", targets.len());
-            println!("Using {} threads", scan_args.threads);
+            let TrailersScanArgs {
+                targets: targets_path,
+                output,
+                threads,
+                proxy,
+                mode,
+            } = scan_args;
 
-            if let Some(proxy) = &scan_args.proxy {
+            let targets = load_targets(&targets_path).await?;
+            println!("Loaded {} targets", targets.len());
+            println!("Using {} threads", threads);
+            println!("Scanner mode: {:?}", mode);
+
+            if let Some(ref proxy) = proxy {
                 println!("Using proxy: {}", proxy);
             }
 
-            let scanner = TargetScanner::new(scan_args.threads);
-            let task = Arc::new(TrailMergeTask::new());
+            let targets_len = targets.len();
+            let scanner = TargetScanner::new(threads);
 
-            let results = scanner
-                .scan(targets, task)
-                .await
-                .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+            let results = match (mode, targets) {
+                (ScanMode::TrailMerge, targets) => {
+                    let task = Arc::new(TrailMergeTask::new());
+                    scanner.scan(targets, task).await
+                }
+                (ScanMode::TrailSmug, targets) => {
+                    let task = Arc::new(TrailSmugTask::new());
+                    scanner.scan(targets, task).await
+                }
+            }
+            .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
             let findings: Vec<ScanOutput> = results
                 .into_iter()
                 .filter(|record| !record.output.trim().is_empty())
                 .collect();
 
-            write_scan_results(&scan_args.output, &findings).await?;
+            write_scan_results(&output, &findings).await?;
 
             println!(
-                "Recorded {} findings in {}",
+                "Recorded {} findings in {} ({} targets scanned)",
                 findings.len(),
-                scan_args.output
+                output,
+                targets_len
             );
         }
     }
@@ -157,6 +190,8 @@ async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error
         println!("Sending request to: {}", args.url);
         if let Some(method) = &args.method {
             println!("Method: {}", method);
+        } else if args.head {
+            println!("Method: HEAD");
         }
         if let Some(body) = &args.data {
             println!("Request body: {}", body);
@@ -182,6 +217,7 @@ async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error
         url,
         data,
         method,
+        head,
         proxy,
         header,
         trailer,
@@ -190,15 +226,29 @@ async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error
         http3,
     } = args;
 
-    let method = method
-        .unwrap_or_else(|| {
-            if data.is_some() {
+    let method = match (head, method) {
+        (true, Some(explicit)) => {
+            if !explicit.eq_ignore_ascii_case("HEAD") {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Cannot combine --head/-I with a non-HEAD --method",
+                )
+                .into());
+            }
+            "HEAD".to_string()
+        }
+        (true, None) => "HEAD".to_string(),
+        (false, Some(explicit)) => explicit.to_uppercase(),
+        (false, None) => {
+            if data.as_ref().is_some() {
                 "POST".to_string()
             } else {
                 "GET".to_string()
             }
-        })
-        .to_uppercase();
+        }
+    };
+
+    let is_head = method.eq_ignore_ascii_case("HEAD");
 
     let headers = parse_cli_headers(&header)?;
     let trailers = parse_cli_headers(&trailer)?;
@@ -211,8 +261,14 @@ async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error
         request = request.trailers(trailers);
     }
     if let Some(body) = data {
-        let processed = convert_escape_sequences(&body);
-        request = request.body(processed);
+        if is_head {
+            if is_verbose() {
+                println!("Ignoring request body for HEAD request");
+            }
+        } else {
+            let processed = convert_escape_sequences(&body);
+            request = request.body(processed);
+        }
     }
     if let Some(proxy) = proxy {
         request = apply_proxy(request, &proxy)?;
