@@ -22,7 +22,7 @@ impl TrailMergeTask {
         detected: &DetectedProtocol,
         timeouts: &ClientTimeouts,
     ) -> Result<Option<String>, ProtocolError> {
-        let request = Request::new(target, "POST")?
+        let base_request = Request::new(target, "POST")?
             .header(Header::new(
                 "user-agent".to_string(),
                 HTTP_USER_AGENT.to_string(),
@@ -38,10 +38,27 @@ impl TrailMergeTask {
             .timeout(timeouts.clone())
             .follow_redirects(true);
 
+        let apply_port = |request: Request| {
+            if let Some(port) = detected.port {
+                request.set_port(port)
+            } else {
+                request
+            }
+        };
+
         let response = match detected.protocol {
-            HttpProtocol::Http1 => H1::timeouts(timeouts.clone()).send_request(request).await?,
-            HttpProtocol::Http2 | HttpProtocol::H2C => H2::timeouts(timeouts.clone()).send_request(request).await?,
-            HttpProtocol::Http3 => H3::timeouts(timeouts.clone()).send_request(request.set_port(detected.port.unwrap())).await?,
+            HttpProtocol::Http1 => {
+                let request = apply_port(base_request.clone());
+                H1::timeouts(timeouts.clone()).send_request(request).await?
+            }
+            HttpProtocol::Http2 | HttpProtocol::H2C => {
+                let request = apply_port(base_request.clone());
+                H2::timeouts(timeouts.clone()).send_request(request).await?
+            }
+            HttpProtocol::Http3 => {
+                let request = apply_port(base_request);
+                H3::timeouts(timeouts.clone()).send_request(request).await?
+            }
         };
 
         let find = match response.status {

@@ -4,7 +4,7 @@ use riphttplib::utils::{convert_escape_sequences, parse_header};
 use riphttplib::{H1, H2, H3};
 use scanner::scanner::{ScanOutput, TargetScanner};
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
 
@@ -116,21 +116,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Using proxy: {}", proxy);
             }
 
-            let verbose = is_verbose();
             let scanner = TargetScanner::new(scan_args.threads);
-            
-            // TODO redo this
-            // let results = scanner
-            //     .scan(targets, move |target| async move {
-            //         if verbose {
-            //             println!("Scanning target: {}", target);
-            //         }
-            //         trailscan(&target).await
-            //     })
-            //     .await
-            //     .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+            let task = Arc::new(TrailMergeTask::new());
 
-            // write_scan_results(&scan_args.output, &results).await?;
+            let results = scanner
+                .scan(targets, task)
+                .await
+                .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+
+            let findings: Vec<ScanOutput> = results
+                .into_iter()
+                .filter(|record| !record.output.trim().is_empty())
+                .collect();
+
+            write_scan_results(&scan_args.output, &findings).await?;
+
+            println!(
+                "Recorded {} findings in {}",
+                findings.len(),
+                scan_args.output
+            );
         }
     }
     Ok(())
