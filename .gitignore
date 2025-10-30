@@ -1,7 +1,7 @@
 .claude
 target/
 vendor/
-targets.txt
-output.txt
+targets*
+*.txt
 todo
 *.py

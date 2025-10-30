@@ -28,10 +28,10 @@ impl TrailMergeTask {
             ))
             .header(Header::new("bug-bounty".to_string(), "scan".to_string()))
             .header(Header::new("te".to_string(), "trailers".to_string()))
-            .body("test")
+            .body("aaaaaaaaa")
             .trailer(Header::new("test".to_string(), "test".to_string()))
             .timeout(timeouts.clone())
-            .follow_redirects(true))
+            .follow_redirects(false))
     }
 
     fn build_attack_request(
@@ -45,14 +45,14 @@ impl TrailMergeTask {
             ))
             .header(Header::new("bug-bounty".to_string(), "scan".to_string()))
             .header(Header::new("te".to_string(), "trailers".to_string()))
-            .body("test")
+            .body("aaaaaaaaa")
             .trailer(Header::new(
                 "content-length".to_string(),
-                "10000".to_string(),
+                "100000".to_string(),
             ))
-            // .trailer(Header::new("host".to_string(), "g0.5-4.cc".to_string()))
+            .trailer(Header::new("expect".to_string(), "100-continue".to_string()))
             .timeout(timeouts.clone())
-            .follow_redirects(true))
+            .follow_redirects(false))
     }
 
     fn apply_detected_port(request: Request, detected: &DetectedProtocol) -> Request {
@@ -89,11 +89,13 @@ impl TrailMergeTask {
         let test_response =
             match Self::send_with_protocol(&detected.protocol, test_request, timeouts).await {
                 Ok(response) => response,
-                Err(ProtocolError::Timeout) => return Ok(None),
+                Err(ProtocolError::Timeout) => {
+                    return Ok(None);
+                },
                 Err(err) => return Err(err),
             };
 
-        if Self::interpret_status(&detected.protocol, test_response.status, target).is_some() {
+        if Self::interpret_status(&detected, test_response.status, target).is_some() {
             return Ok(None);
         }
 
@@ -105,17 +107,18 @@ impl TrailMergeTask {
             Self::send_with_protocol(&detected.protocol, attack_request, timeouts).await?;
 
         Ok(Self::interpret_status(
-            &detected.protocol,
+            &detected,
             response.status,
             target,
         ))
     }
 
-    fn interpret_status(protocol: &HttpProtocol, status: u16, target: &str) -> Option<String> {
+    fn interpret_status(detected: &DetectedProtocol, status: u16, target: &str) -> Option<String> {
         match status {
-            504 => Some(format!("[+] gateway timeout! {} {}", protocol, target)),
-            // 503 => Some(format!("[?] service unavailable {} {}", protocol, target)),
-            // 502 => Some(format!("[?] bad gateway {} {}", protocol, target)),
+            100 => Some(format!("[!+] got expect! {} {} {:?}", detected.protocol, target, detected.port)),
+            504 => Some(format!("[+] gateway timeout! {} {} {:?}", detected.protocol, target, detected.port)),
+            // 503 => Some(format!("[?] service unavailable {} {}", detected.protocol, target)),
+            // 502 => Some(format!("[?] bad gateway {} {}", detected.protocol, target)),
             _ => None,
         }
     }

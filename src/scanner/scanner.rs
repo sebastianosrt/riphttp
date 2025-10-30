@@ -104,21 +104,21 @@ where
 
     async fn execute(&self, target: String) -> Result<String, Self::Error> {
         let progress = self.progress.clone();
-        let result = self.inner.execute(target.clone()).await;
 
-        match &result {
-            Ok(output) if !output.trim().is_empty() => {
-                progress.println(output.clone());
+        match self.inner.execute(target.clone()).await {
+            Ok(output) => {
+                if !output.trim().is_empty() {
+                    progress.println(output.clone());
+                }
+                progress.inc(1);
+                Ok(output)
             }
             Err(err) => {
-                if crate::is_verbose() {
-                    progress.println(format!("[-] {}: {}", target, err));
-                }
+                let message = format!("[-] {}: {}", target, err);
+                progress.println(message);
+                progress.inc(1);
+                Ok(String::new())
             }
-            _ => {}
         }
-
-        progress.inc(1);
-        result
     }
 }
