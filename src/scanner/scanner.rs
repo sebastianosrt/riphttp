@@ -1,9 +1,12 @@
 use super::executor::{self, ExecutionError};
+use super::recorder::{RecorderConfig, RecorderError, RecorderHandle, ScanRecorder};
 use super::task::Task;
 use async_trait::async_trait;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fmt::Display;
 use std::sync::Arc;
+use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::task::JoinHandle;
 
 pub type ScanError = ExecutionError;
 
@@ -15,29 +18,29 @@ pub struct ScanOutput {
 
 pub type ScanResult = Result<Vec<ScanOutput>, ScanError>;
 
-/// High-level facade that distributes work across a fixed number of asynchronous workers.
-///
-/// The scanner hands each supplied target to the provided callback while respecting the
-/// configured level of parallelism. It is designed to cope with very large target sets without
-/// spawning unbounded tasks.
+#[derive(Default)]
+pub struct ScanOptions {
+    pub recorder: Option<RecorderConfig>,
+}
+
+struct RecorderRuntime {
+    sender: UnboundedSender<(usize, String, String)>,
+    forward_handle: JoinHandle<Result<(), RecorderError>>,
+    recorder_task: JoinHandle<Result<(), RecorderError>>,
+    handle: RecorderHandle,
+}
+
 pub struct TargetScanner {
     concurrency: usize,
 }
 
 impl TargetScanner {
-    /// Create a scanner that executes at most `concurrency` callbacks simultaneously.
     pub fn new(concurrency: usize) -> Self {
         Self {
             concurrency: concurrency.max(1),
         }
     }
 
-    /// Return the configured parallelism level.
-    // pub fn concurrency(&self) -> usize {
-    //     self.concurrency
-    // }
-
-    /// Build a scanner that defaults to the system's advertised parallelism.
     pub fn with_default_concurrency() -> Self {
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -45,17 +48,32 @@ impl TargetScanner {
         Self::new(threads)
     }
 
-    /// Scan each target by passing it to the supplied asynchronous callback.
-    ///
-    /// The callback is awaited before the scanner hands out another target once the concurrency
-    /// budget has been reached. The function resolves when every target has been processed.
+    #[allow(dead_code)]
     pub async fn scan<I, T>(&self, targets: I, task: Arc<T>) -> ScanResult
     where
         I: IntoIterator<Item = String>,
         T: Task + 'static,
         T::Error: Display,
     {
+        self.scan_with_options(targets, task, ScanOptions::default())
+            .await
+    }
+
+    pub async fn scan_with_options<I, T>(
+        &self,
+        targets: I,
+        task: Arc<T>,
+        options: ScanOptions,
+    ) -> ScanResult
+    where
+        I: IntoIterator<Item = String>,
+        T: Task + 'static,
+        T::Error: Display,
+    {
+        let ScanOptions { recorder } = options;
+
         let targets_vec: Vec<String> = targets.into_iter().collect();
+
         let total = targets_vec.len() as u64;
 
         let progress_bar = ProgressBar::new(total);
@@ -71,15 +89,83 @@ impl TargetScanner {
             progress: progress_bar_clone,
         });
 
-        let results = executor::execute(targets_vec, self.concurrency, task).await;
+        let mut recorder_runtime = recorder.map(|recorder_cfg| self.spawn_recorder(recorder_cfg));
+
+        let result_sender = recorder_runtime.as_ref().map(|runtime| &runtime.sender);
+
+        let execution_outcome =
+            executor::execute(targets_vec, self.concurrency, task, result_sender).await;
         progress_bar.finish_and_clear();
 
-        results.map(|records| {
-            records
+        let recorder_outcome = self.finalize_recorder(recorder_runtime.take()).await;
+
+        match (execution_outcome, recorder_outcome) {
+            (Err(err), _) => Err(err),
+            (Ok(_), Err(err)) => Err(err),
+            (Ok(records), Ok(())) => Ok(records
                 .into_iter()
                 .map(|(target, output)| ScanOutput { target, output })
-                .collect()
-        })
+                .collect()),
+        }
+    }
+
+    fn spawn_recorder(&self, recorder_cfg: RecorderConfig) -> RecorderRuntime {
+        let base_index = recorder_cfg.base_index;
+        let (recorder, handle, receiver) = ScanRecorder::new(recorder_cfg);
+
+        let recorder_handle = handle.clone();
+        let recorder_task = tokio::spawn(async move { recorder.run(receiver).await });
+
+        let (sender, receiver) = mpsc::unbounded_channel::<(usize, String, String)>();
+        let forward_handle = tokio::spawn(async move {
+            let mut receiver = receiver;
+            while let Some((index, target, output)) = receiver.recv().await {
+                let absolute_index = base_index + index;
+                if let Err(err) = recorder_handle.record(absolute_index, target, output) {
+                    return Err(err);
+                }
+            }
+            Ok::<_, RecorderError>(())
+        });
+
+        RecorderRuntime {
+            sender,
+            forward_handle,
+            recorder_task,
+            handle,
+        }
+    }
+
+    async fn finalize_recorder(&self, runtime: Option<RecorderRuntime>) -> Result<(), ScanError> {
+        let Some(runtime) = runtime else {
+            return Ok(());
+        };
+
+        let RecorderRuntime {
+            sender,
+            forward_handle,
+            recorder_task,
+            handle,
+        } = runtime;
+
+        // Request a final flush and drop the producer side so the forwarding task can exit.
+        let _ = handle.request_flush();
+        drop(sender);
+
+        let forward_result = forward_handle.await;
+        let recorder_result = recorder_task.await;
+
+        match forward_result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => return Err(ExecutionError::persistence(err)),
+            Err(join_err) => return Err(ExecutionError::internal(join_err)),
+        }
+
+        match recorder_result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(ExecutionError::persistence(err)),
+            Err(join_err) => Err(ExecutionError::internal(join_err)),
+        }
     }
 }
 
@@ -113,9 +199,9 @@ where
                 progress.inc(1);
                 Ok(output)
             }
-            Err(err) => {
-                let message = format!("[-] {}: {}", target, err);
-                progress.println(message);
+            Err(_) => {
+                // let message = format!("[-] {}: {}", target, err);
+                // progress.println(message);
                 progress.inc(1);
                 Ok(String::new())
             }

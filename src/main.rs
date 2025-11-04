@@ -1,15 +1,18 @@
-use clap::{Parser, Subcommand, ValueEnum};
-use riphttplib::types::{Header, ProtocolError, Request, Response};
+use clap::{Parser, Subcommand, ValueEnum, CommandFactory};
+use riphttplib::types::{ProtocolError, Request, Response};
 use riphttplib::utils::{convert_escape_sequences, parse_header};
 use riphttplib::{H1, H2, H3};
-use scanner::scanner::{ScanOutput, TargetScanner};
+use scanner::checkpoint::{
+    Checkpoint, default_checkpoint_path, read_checkpoint, remove_checkpoint, write_checkpoint,
+};
+use scanner::recorder::default_recorder_config;
+use scanner::scanner::{ScanOptions, ScanOutput, TargetScanner};
+use std::fmt;
 use std::io::{self, Write};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tokio::{fs::File, io::AsyncWriteExt};
-use url::Url;
 
 mod core;
 mod modules;
@@ -30,29 +33,76 @@ pub fn set_verbose(verbose: bool) {
 
 /// RipHTTP - HTTP Protocol Scanner
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(
+    version,
+    about,
+    long_about = None,
+    // Allow top-level args to be used without a subcommand
+    subcommand_required = false,
+    // If a subcommand is used, don't require top-level required args
+    subcommand_negates_reqs = true,
+    // Prevent mixing top-level args with subcommands
+    args_conflicts_with_subcommands = true
+)]
 struct Args {
     /// Enable verbose output
     #[clap(short, long, global = true)]
     verbose: bool,
+    /// Default client-mode arguments when no subcommand given
+    #[clap(flatten)]
+    client: TopClientArgs,
+    /// Optional subcommand (e.g. scan, client)
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Send single HTTP request
-    Protocol(ClientArgs),
+    Client(ClientArgs),
     /// Mass scan multiple targets
-    TrailersScan(TrailersScanArgs),
+    Scan(ScanArgs),
 }
 
 /// Arguments for HTTP client
 #[derive(Parser, Debug)]
 struct ClientArgs {
     /// Target URL
-    #[clap(short, long)]
     url: String,
+    /// Request body
+    #[clap(short, long)]
+    data: Option<String>,
+    /// Method
+    #[clap(short, long)]
+    method: Option<String>,
+    /// Perform a HEAD request (similar to curl -I)
+    #[clap(short = 'I', long)]
+    head: bool,
+    /// Proxy to use
+    #[clap(short, long)]
+    proxy: Option<String>,
+    /// Headers (can be specified multiple times)
+    #[clap(short = 'H', long)]
+    header: Vec<String>,
+    /// Trailers (can be specified multiple times)
+    #[clap(short = 'T', long)]
+    trailer: Vec<String>,
+    /// use HTTP1
+    #[clap(long, default_value = "false")]
+    http1: bool,
+    /// use HTTP2
+    #[clap(long, default_value = "false")]
+    http2: bool,
+    /// use HTTP3
+    #[clap(long, default_value = "false")]
+    http3: bool,
+}
+
+/// Default client-mode args at the top-level (URL optional so subcommands don't require it)
+#[derive(clap::Args, Debug, Clone)]
+struct TopClientArgs {
+    /// Target URL
+    url: Option<String>,
     /// Request body
     #[clap(short, long)]
     data: Option<String>,
@@ -84,15 +134,18 @@ struct ClientArgs {
 
 /// Arguments for mass scanning
 #[derive(Parser, Debug)]
-struct TrailersScanArgs {
+struct ScanArgs {
     /// Target file
     #[clap(short, long, default_value = "targets.txt")]
     targets: String,
     /// Output file
     #[clap(short, long, default_value = "output.txt")]
     output: String,
+    /// Resume from a checkpoint created during a previous scan
+    #[clap(long)]
+    resume: bool,
     /// Number of threads
-    #[clap(long, default_value = "500")]
+    #[clap(long, default_value = "100")]
     threads: usize,
     /// Proxy to use
     #[clap(long)]
@@ -108,6 +161,15 @@ enum ScanMode {
     TrailSmug,
 }
 
+impl fmt::Display for ScanMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScanMode::TrailMerge => write!(f, "TrailMerge"),
+            ScanMode::TrailSmug => write!(f, "TrailSmug"),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -116,24 +178,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     set_verbose(args.verbose);
 
     match args.command {
-        Commands::Protocol(client_args) => {
+        Some(Commands::Client(client_args)) => {
             run_protocol_command(client_args).await?;
         }
-        Commands::TrailersScan(scan_args) => {
+        Some(Commands::Scan(scan_args)) => {
             if is_verbose() {
                 println!("Running trailers scan in verbose mode");
             }
 
-            let TrailersScanArgs {
+            let ScanArgs {
                 targets: targets_path,
                 output,
+                resume,
                 threads,
                 proxy,
                 mode,
             } = scan_args;
 
             let targets = load_targets(&targets_path).await?;
-            println!("Loaded {} targets", targets.len());
+            let total_targets = targets.len();
+            println!("Loaded {} targets", total_targets);
             println!("Using {} threads", threads);
             println!("Scanner mode: {:?}", mode);
 
@@ -141,48 +205,172 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Using proxy: {}", proxy);
             }
 
-            let targets_len = targets.len();
+            let checkpoint_path = default_checkpoint_path();
+            let mut output_path = output.clone();
+            let mut base_index: usize = 0;
+            let mut truncate_output = true;
+            let mode_label = mode.to_string();
+
+            let checkpoint_to_use = if resume {
+                let checkpoint = read_checkpoint(&checkpoint_path).await?.ok_or_else(|| {
+                    format!(
+                        "No checkpoint found at '{}'. Run without --resume to start a fresh scan.",
+                        checkpoint_path.display()
+                    )
+                })?;
+
+                if checkpoint.targets_path != targets_path {
+                    return Err(format!(
+                        "Checkpoint targets '{}' do not match requested '{}'",
+                        checkpoint.targets_path, targets_path
+                    )
+                    .into());
+                }
+
+                if checkpoint.mode != mode_label {
+                    return Err(format!(
+                        "Checkpoint mode '{}' does not match requested '{}'",
+                        checkpoint.mode, mode_label
+                    )
+                    .into());
+                }
+
+                if checkpoint.output_path != output_path {
+                    println!(
+                        "Using output file '{}' from checkpoint (overriding '{}')",
+                        checkpoint.output_path, output_path
+                    );
+                    output_path = checkpoint.output_path.clone();
+                }
+                Some(checkpoint)
+            } else {
+                None
+            };
+
+            if let Some(checkpoint) = checkpoint_to_use {
+                base_index = checkpoint.next_index.min(total_targets);
+                truncate_output = false;
+
+                if base_index >= total_targets {
+                    println!(
+                        "Checkpoint indicates all {} targets were already scanned.",
+                        total_targets
+                    );
+                    remove_checkpoint(&checkpoint_path).await?;
+                    return Ok(());
+                }
+
+                println!(
+                    "Resuming from checkpoint: {} targets processed, {} remaining",
+                    base_index,
+                    total_targets - base_index
+                );
+            } else {
+                remove_checkpoint(&checkpoint_path).await?;
+            }
+
+            let remaining_total = total_targets.saturating_sub(base_index);
+            if remaining_total == 0 {
+                println!("No targets left to scan.");
+                remove_checkpoint(&checkpoint_path).await?;
+                return Ok(());
+            }
+
+            let recorder_cfg = default_recorder_config(
+                output_path.clone(),
+                targets_path.clone(),
+                mode_label.clone(),
+                base_index,
+                remaining_total,
+                truncate_output,
+            );
+
+            // Initialize the checkpoint so that a sudden stop before any target completes can still resume.
+            let initial_checkpoint = Checkpoint::new(
+                base_index,
+                targets_path.clone(),
+                output_path.clone(),
+                mode_label.clone(),
+            );
+            write_checkpoint(&checkpoint_path, &initial_checkpoint).await?;
+
+            println!(
+                "Writing findings incrementally to '{}' and tracking progress in '{}'",
+                output_path,
+                checkpoint_path.display()
+            );
+
             let scanner = TargetScanner::new(threads);
 
             let results = match (mode, targets) {
-                (ScanMode::TrailMerge, targets) => {
+                (ScanMode::TrailMerge, targets_vec) => {
                     let task = Arc::new(TrailMergeTask::new());
-                    scanner.scan(targets, task).await
+                    scanner
+                        .scan_with_options(
+                            targets_vec.into_iter().skip(base_index),
+                            task,
+                            ScanOptions {
+                                recorder: Some(recorder_cfg.clone()),
+                            },
+                        )
+                        .await
                 }
-                (ScanMode::TrailSmug, targets) => {
+                (ScanMode::TrailSmug, targets_vec) => {
                     let task = Arc::new(TrailSmugTask::new());
-                    scanner.scan(targets, task).await
+                    scanner
+                        .scan_with_options(
+                            targets_vec.into_iter().skip(base_index),
+                            task,
+                            ScanOptions {
+                                recorder: Some(recorder_cfg.clone()),
+                            },
+                        )
+                        .await
                 }
             }
             .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
+            let total_results = results.len();
             let findings: Vec<ScanOutput> = results
                 .into_iter()
                 .filter(|record| !record.output.trim().is_empty())
                 .collect();
 
-            write_scan_results(&output, &findings).await?;
-
+            let total_processed = base_index + total_results;
             println!(
-                "Recorded {} findings in {} ({} targets scanned)",
+                "Recorded {} findings in {} ({} targets scanned this run, {} total processed)",
                 findings.len(),
-                output,
-                targets_len
+                output_path,
+                total_results,
+                total_processed
             );
+        }
+        None => {
+            // No subcommand provided; run in default client mode using top-level args
+            let top = args.client;
+            if let Some(url) = top.url {
+                let client_args = ClientArgs {
+                    url,
+                    data: top.data,
+                    method: top.method,
+                    head: top.head,
+                    proxy: top.proxy,
+                    header: top.header,
+                    trailer: top.trailer,
+                    http1: top.http1,
+                    http2: top.http2,
+                    http3: top.http3,
+                };
+                run_protocol_command(client_args).await?;
+            } else {
+                eprintln!("error: the following required argument was not provided: <URL>\n");
+                let mut cmd = Args::command();
+                let _ = cmd.print_help();
+                eprintln!();
+            }
         }
     }
     Ok(())
-}
-
-async fn write_scan_results(path: &str, results: &[ScanOutput]) -> io::Result<()> {
-    let mut file = File::create(path).await?;
-    for record in results {
-        file.write_all(record.target.as_bytes()).await?;
-        file.write_all(b"\t").await?;
-        file.write_all(record.output.as_bytes()).await?;
-        file.write_all(b"\n").await?;
-    }
-    file.flush().await
 }
 
 async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -283,33 +471,20 @@ async fn run_protocol_command(args: ClientArgs) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn parse_cli_headers(items: &[String]) -> Result<Vec<Header>, ProtocolError> {
+fn parse_cli_headers(items: &[String]) -> Result<Vec<String>, ProtocolError> {
     let mut headers = Vec::with_capacity(items.len());
     for item in items {
         let parsed = parse_header(item)
             .ok_or_else(|| ProtocolError::MalformedHeaders(format!("Invalid header '{}'", item)))?;
-        headers.push(parsed);
+        headers.push(parsed.to_string());
     }
     Ok(headers)
 }
 
 fn apply_proxy(mut request: Request, proxy: &str) -> Result<Request, Box<dyn std::error::Error>> {
-    let parsed = Url::parse(proxy)?;
-    let scheme = parsed.scheme();
-
-    request = match scheme {
-        "http" => request.http_proxy(proxy)?,
-        "https" => request.https_proxy(proxy)?,
-        "socks5" | "socks" => request.socks5_proxy(proxy)?,
-        "socks4" => request.socks4_proxy(proxy)?,
-        other => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Unsupported proxy scheme '{}': {}", other, proxy),
-            )
-            .into());
-        }
-    };
+    request
+        .set_proxy(proxy)
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
 
     Ok(request)
 }

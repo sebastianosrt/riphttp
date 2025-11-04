@@ -2,12 +2,12 @@ use crate::core::constants::HTTP_USER_AGENT;
 use crate::scanner::task::Task;
 use async_trait::async_trait;
 use riphttplib::types::protocol::HttpProtocol;
-use riphttplib::types::{ClientTimeouts, Header, ProtocolError, Request, Response};
+use riphttplib::types::{ClientTimeouts, ProtocolError, Request, Response};
 use riphttplib::{DetectedProtocol, H1, H2, H3, detect_protocol};
 use std::time::Duration;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const IO_TIMEOUT: Duration = Duration::from_secs(7);
 
 #[derive(Clone, Copy, Default)]
 pub struct TrailMergeTask;
@@ -22,35 +22,38 @@ impl TrailMergeTask {
         timeouts: &ClientTimeouts,
     ) -> Result<Request, ProtocolError> {
         Ok(Request::new(target, "POST")?
-            .header(Header::new(
-                "user-agent".to_string(),
-                HTTP_USER_AGENT.to_string(),
-            ))
-            .header(Header::new("bug-bounty".to_string(), "scan".to_string()))
-            .header(Header::new("te".to_string(), "trailers".to_string()))
+            .header(&format!("user-agent: {}", HTTP_USER_AGENT))
+            .header("te: trailers")
             .body("aaaaaaaaa")
-            .trailer(Header::new("test".to_string(), "test".to_string()))
+            .trailer("test: testlongolonglonglongheader")
+            .trailer("content-length: 0")
             .timeout(timeouts.clone())
             .follow_redirects(false))
     }
 
-    fn build_attack_request(
+    fn build_timeout_request(
         target: &str,
         timeouts: &ClientTimeouts,
     ) -> Result<Request, ProtocolError> {
         Ok(Request::new(target, "POST")?
-            .header(Header::new(
-                "user-agent".to_string(),
-                HTTP_USER_AGENT.to_string(),
-            ))
-            .header(Header::new("bug-bounty".to_string(), "scan".to_string()))
-            .header(Header::new("te".to_string(), "trailers".to_string()))
+            .header(&format!("user-agent: {}", HTTP_USER_AGENT))
+            .header("te: trailers")
             .body("aaaaaaaaa")
-            .trailer(Header::new(
-                "content-length".to_string(),
-                "100000".to_string(),
-            ))
-            .trailer(Header::new("expect".to_string(), "100-continue".to_string()))
+            .trailer("content-length: 100000")
+            .trailer("user-agent: xxx")
+            .timeout(timeouts.clone())
+            .follow_redirects(false))
+    }
+
+    fn build_expect_request(
+        target: &str,
+        timeouts: &ClientTimeouts,
+    ) -> Result<Request, ProtocolError> {
+        Ok(Request::new(target, "POST")?
+            .header(&format!("user-agent: {}", HTTP_USER_AGENT))
+            .header("te: trailers")
+            .body("aaaaaaaaa")
+            .trailer("expect: 100-continue")
             .timeout(timeouts.clone())
             .follow_redirects(false))
     }
@@ -91,7 +94,7 @@ impl TrailMergeTask {
                 Ok(response) => response,
                 Err(ProtocolError::Timeout) => {
                     return Ok(None);
-                },
+                }
                 Err(err) => return Err(err),
             };
 
@@ -99,26 +102,49 @@ impl TrailMergeTask {
             return Ok(None);
         }
 
-        // Follow-up with the actual attack payload
-        let attack_request = Self::build_attack_request(target, timeouts)?;
+        // test expect
+        let expect_req = Self::build_expect_request(target, timeouts)?;
+        let expect_req = Self::apply_detected_port(expect_req, detected);
+        match Self::send_with_protocol(&detected.protocol, expect_req, timeouts).await {
+            Ok(response) => {
+                if response.status == 100 {
+                    return Ok(Some(format!(
+                        "[!+] got expect! {} {} {:?}",
+                        detected.protocol, target, detected.port
+                    )));
+                }
+            }
+            Err(ProtocolError::Timeout) => {
+                return Ok(None);
+            }
+            _ => {}
+        };
+
+        // timeout payload
+        let attack_request = Self::build_timeout_request(target, timeouts)?;
         let attack_request = Self::apply_detected_port(attack_request, detected);
 
         let response =
             Self::send_with_protocol(&detected.protocol, attack_request, timeouts).await?;
 
-        Ok(Self::interpret_status(
-            &detected,
-            response.status,
-            target,
-        ))
+        Ok(Self::interpret_status(&detected, response.status, target))
     }
 
     fn interpret_status(detected: &DetectedProtocol, status: u16, target: &str) -> Option<String> {
         match status {
-            100 => Some(format!("[!+] got expect! {} {} {:?}", detected.protocol, target, detected.port)),
-            504 => Some(format!("[+] gateway timeout! {} {} {:?}", detected.protocol, target, detected.port)),
-            // 503 => Some(format!("[?] service unavailable {} {}", detected.protocol, target)),
-            // 502 => Some(format!("[?] bad gateway {} {}", detected.protocol, target)),
+            100 => Some(format!(
+                "[!+] got expect! {} {} {:?}",
+                detected.protocol, target, detected.port
+            )),
+            502 => Some(format!("[?] bad gateway {} {}", detected.protocol, target)),
+            503 => Some(format!(
+                "[?] service unavailable {} {}",
+                detected.protocol, target
+            )),
+            504 => Some(format!(
+                "[+] gateway timeout! {} {} {:?}",
+                detected.protocol, target, detected.port
+            )),
             _ => None,
         }
     }
@@ -138,6 +164,7 @@ impl Task for TrailMergeTask {
         let protocols = detect_protocol(&target).await?;
         let mut findings = Vec::new();
 
+        // detect supported protocols for the target
         for detected in protocols {
             let protocol = detected.protocol.clone();
             match Self::scan_protocol(&target, &detected, &timeouts).await {
