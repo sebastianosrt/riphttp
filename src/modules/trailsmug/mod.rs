@@ -81,7 +81,7 @@ impl TrailSmugTask {
             POST {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Connection: keep-alive\r\n\
-            User-Agent: {HTTP_USER_AGENT}
+            User-Agent: {HTTP_USER_AGENT}\r\n\
             Transfer-Encoding: chunked\r\n\
             \r\n\
             0\r\n\
@@ -91,7 +91,7 @@ impl TrailSmugTask {
             POST {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Connection: keep-alive\r\n\
-            User-Agent: {HTTP_USER_AGENT}
+            User-Agent: {HTTP_USER_AGENT}\r\n\
             Content-Length: {len}\r\n\
             \r\n\
             {smug}"
@@ -135,33 +135,33 @@ impl Task for TrailSmugTask {
             return Ok("".to_string());
         }
 
-        for req in attacks {
-            // send attack
-            client.send_raw(&target, req.into()).await?;
-            // send base and check if there's a difference
-            match client
-                .send_request(Self::build_baseline_request(&target, &timeouts)?)
-                .await
-            {
-                Ok(res) => {
-                    if res.status != baseline_res.status {
-                        if res.status == 404 {
-                            findings.push(format!(
-                                "[!] {} 404 resp difference: baseline {} curr {}",
-                                target, baseline_res.status, res.status
-                            ));
-                        } else if res.status != 429 {
-                            findings.push(format!(
-                                "{} resp difference: baseline {} curr {}",
-                                target, baseline_res.status, res.status
-                            ));
+        for req in &attacks {
+            let mut diff = false;
+            for i in 0..2 { // two probes
+                // send attack
+                client.send_raw(&target, req.to_string().into()).await?;
+                // send base and check if there's a difference
+                match client
+                    .send_request(Self::build_baseline_request(&target, &timeouts)?)
+                    .await
+                {
+                    Ok(res) => {
+                        if res.status != baseline_res.status {
+                            if i == 0 {
+                                diff = true;
+                            } else if diff {
+                                findings.push(format!(
+                                    "[!] {} resp difference: baseline {} curr {} payload {}",
+                                    target, baseline_res.status, res.status, req
+                                ));
+                            }
                         }
                     }
-                }
-                Err(_) => {
-                    return Ok(findings.join("\n"));
-                }
-            };
+                    Err(_) => {
+                        return Ok(findings.join("\n"));
+                    }
+                };
+            }
         }
 
         Ok(findings.join("\n"))
