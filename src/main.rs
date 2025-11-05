@@ -20,6 +20,7 @@ mod scanner;
 use core::utils::load_targets;
 use modules::trailmerge::TrailMergeTask;
 use modules::trailsmug::TrailSmugTask;
+use modules::clzero::CLzeroTask;
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 
@@ -159,6 +160,7 @@ struct ScanArgs {
 enum ScanMode {
     TrailMerge,
     TrailSmug,
+    CLzero
 }
 
 impl fmt::Display for ScanMode {
@@ -166,6 +168,7 @@ impl fmt::Display for ScanMode {
         match self {
             ScanMode::TrailMerge => write!(f, "TrailMerge"),
             ScanMode::TrailSmug => write!(f, "TrailSmug"),
+            ScanMode::CLzero => write!(f, "clzero"),
         }
     }
 }
@@ -317,6 +320,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 (ScanMode::TrailSmug, targets_vec) => {
                     let task = Arc::new(TrailSmugTask::new());
+                    scanner
+                        .scan_with_options(
+                            targets_vec.into_iter().skip(base_index),
+                            task,
+                            ScanOptions {
+                                recorder: Some(recorder_cfg.clone()),
+                            },
+                        )
+                        .await
+                }
+                (ScanMode::CLzero, targets_vec) => {
+                    let task = Arc::new(CLzeroTask::new());
                     scanner
                         .scan_with_options(
                             targets_vec.into_iter().skip(base_index),
