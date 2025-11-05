@@ -6,17 +6,19 @@ riphttp is an HTTP1.1/2/3 client and security scanner with trailers support.
 
 clone the repo
 ```
-git clone ...
+git clone https://github.com/sebastianosrt/riphttp.git
 cd riphttp
 ```
 
-or download the binaries from [release]
+or download the binaries from release
 
 
-- client usage
+- client usage example
 
 ```
-cargo run -- https://url -H 'header: value' -T 'trailer: value' -d 'data' --http2
+cargo run -- https://url -H 'header: value' -d 'data' -T 'trailer: value' --http2
+# or
+# ./riphttp https://url -H 'header: value' -d 'data' -T 'trailer: value' --http2
 ```
 
 Client options:
@@ -28,7 +30,7 @@ Options:
   -v, --verbose            Enable verbose output
   -d, --data <DATA>        Request body
   -m, --method <METHOD>    Method
-  -I, --head               Perform a HEAD request (similar to curl -I)
+  -I, --head               Perform a HEAD request
   -p, --proxy <PROXY>      Proxy to use
   -H, --header <HEADER>    Headers (can be specified multiple times)
   -T, --trailer <TRAILER>  Trailers (can be specified multiple times)

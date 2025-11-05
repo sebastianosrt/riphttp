@@ -24,6 +24,7 @@ impl TrailMergeTask {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
             .header("te: trailers")
+            .header("trailer: test, content-length")
             .body("aaaaaaaaa")
             .trailer("test: testlongolonglonglongheader")
             .trailer("content-length: 0")
@@ -38,6 +39,7 @@ impl TrailMergeTask {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
             .header("te: trailers")
+            .header("trailer: content-length, user-agent")
             .body("aaaaaaaaa")
             .trailer("content-length: 100000")
             .trailer("user-agent: xxx")
@@ -52,6 +54,7 @@ impl TrailMergeTask {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
             .header("te: trailers")
+            .header("trailer: expect")
             .body("aaaaaaaaa")
             .trailer("expect: 100-continue")
             .timeout(timeouts.clone())

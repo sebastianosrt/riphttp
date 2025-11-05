@@ -1088,6 +1088,7 @@ dependencies = [
 [[package]]
 name = "riphttplib"
 version = "0.1.0"
+source = "git+https://github.com/sebastianosrt/riphttplib#be9503625227a7ad56a2a57c70121fab8a5ccdb9"
 dependencies = [
  "async-trait",
  "bytes",

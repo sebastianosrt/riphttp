@@ -75,7 +75,7 @@ struct ClientArgs {
     /// Method
     #[clap(short, long)]
     method: Option<String>,
-    /// Perform a HEAD request (similar to curl -I)
+    /// Perform a HEAD request
     #[clap(short = 'I', long)]
     head: bool,
     /// Proxy to use
@@ -145,7 +145,7 @@ struct ScanArgs {
     #[clap(long)]
     resume: bool,
     /// Number of threads
-    #[clap(long, default_value = "100")]
+    #[clap(long, default_value = "50")]
     threads: usize,
     /// Proxy to use
     #[clap(long)]
