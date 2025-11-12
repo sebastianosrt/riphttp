@@ -107,6 +107,7 @@ impl Task for CLzeroTask {
             read: Some(IO_TIMEOUT),
             write: Some(IO_TIMEOUT),
         };
+        let invalid_statuses = [400, 401, 403, 429, 502, 503];
 
         let client = H1::timeouts(timeouts.clone());
 
@@ -127,7 +128,7 @@ impl Task for CLzeroTask {
             }
         };
 
-        if [400, 429, 502, 503].contains(&baseline_res.status) {
+        if invalid_statuses.contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
@@ -142,7 +143,7 @@ impl Task for CLzeroTask {
                     .await
                 {
                     Ok(res) => {
-                        if res.status != baseline_res.status && ![403, 429].contains(&res.status) {
+                        if !invalid_statuses.contains(&res.status) && (res.status != baseline_res.status || baseline_res.text().len().abs_diff(res.text().len()) > 20 ) {
                             if i == 0 {
                                 diff = true;
                             } else if diff {
@@ -153,9 +154,7 @@ impl Task for CLzeroTask {
                             }
                         }
                     }
-                    Err(_) => {
-                        return Ok(findings.join("\n"));
-                    }
+                    Err(_) => {}
                 };
             }
         }
