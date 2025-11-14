@@ -7,7 +7,7 @@ use riphttplib::{DetectedProtocol, H1, H2, H3, detect_protocol};
 use std::time::Duration;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-const IO_TIMEOUT: Duration = Duration::from_secs(7);
+const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Default)]
 pub struct TrailMergeTask;
