@@ -156,6 +156,7 @@ impl TrailSmugTask {
         // payloads.push(format!("\
         //     GET {path} HTTP/1.1\r\n\
         //     Host: {authority}\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
         //     Content-Length: {len}\r\n\
         //     Transfer-Encoding: Chunked\r\n\
         //     \r\n\
@@ -167,6 +168,7 @@ impl TrailSmugTask {
         // payloads.push(format!("\
         //     GET {path} HTTP/1.1\r\n\
         //     Host: {authority}\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
         //     Content-Length: {len}\r\n\
         //     Transfer-Encoding: Chunked\r\n\
         //     \r\n\
@@ -205,6 +207,7 @@ impl TrailSmugTask {
             GET {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Content-Length: {len}\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
             Transfer-Encoding: Chunked\r\n\
             \r\n\
             0\r\n\
@@ -216,6 +219,7 @@ impl TrailSmugTask {
             GET {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Content-Length: {len}\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
             Transfer-Encoding:\r\n\tChunked\r\n\
             \r\n\
             0\r\n\
