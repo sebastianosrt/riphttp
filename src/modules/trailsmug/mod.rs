@@ -45,7 +45,7 @@ impl TrailSmugTask {
         //     aa\r\n\
         //     0\r\n\
         //     any: value\r\n\
-        //     GET /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
+        //     TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
         //     X: "
         // ));
 
@@ -60,7 +60,7 @@ impl TrailSmugTask {
         //     aa\r\n\
         //     0\r\n\
         //     any: value\n\n\
-        //     GET /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
+        //     TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
         //     X: "
         // ));
 
@@ -355,7 +355,7 @@ impl Task for TrailSmugTask {
             }
         };
 
-        if [301, 302, 400, 403, 404, 408, 429, 502, 503].contains(&baseline_res.status) {
+        if [301, 302, 307, 308, 400, 403, 404, 408, 429, 502, 503, 504].contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
@@ -372,7 +372,7 @@ impl Task for TrailSmugTask {
                     .await
                 {
                     Ok(res) => {
-                        if res.status != baseline_res.status && ![403, 429, 502, 503].contains(&res.status) {
+                        if res.status != baseline_res.status && ![403, 409, 420, 429, 502, 503].contains(&res.status) {
                             if i != (probes-1) {
                                 diff = true;
                             } else if diff {
