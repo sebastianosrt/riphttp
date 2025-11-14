@@ -23,8 +23,6 @@ impl TrailMergeTask {
     ) -> Result<Request, ProtocolError> {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
-            .header("te: trailers")
-            .header("trailer: test, content-length")
             .body("aaaaaaaaa")
             .trailer("test: testlongolonglonglongheader")
             .trailer("content-length: 0")
@@ -38,11 +36,10 @@ impl TrailMergeTask {
     ) -> Result<Request, ProtocolError> {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
-            .header("te: trailers")
-            .header("trailer: content-length, user-agent")
             .body("aaaaaaaaa")
+            .trailer("test: testlongolonglonglongheader")
             .trailer("content-length: 100000")
-            .trailer("user-agent: xxx")
+            // .trailer("user-agent: xxx")
             .timeout(timeouts.clone())
             .follow_redirects(false))
     }
@@ -53,8 +50,6 @@ impl TrailMergeTask {
     ) -> Result<Request, ProtocolError> {
         Ok(Request::new(target, "POST")?
             .header(&format!("user-agent: {}", HTTP_USER_AGENT))
-            .header("te: trailers")
-            .header("trailer: expect")
             .body("aaaaaaaaa")
             .trailer("expect: 100-continue")
             .timeout(timeouts.clone())
@@ -88,6 +83,8 @@ impl TrailMergeTask {
         detected: &DetectedProtocol,
         timeouts: &ClientTimeouts,
     ) -> Result<Option<String>, ProtocolError> {
+        // let probes = 3;
+
         // Send baseline request first
         let test_request = Self::build_test_request(target, timeouts)?;
         let test_request = Self::apply_detected_port(test_request, detected);
@@ -117,20 +114,21 @@ impl TrailMergeTask {
                     )));
                 }
             }
-            Err(ProtocolError::Timeout) => {
-                return Ok(None);
-            }
+            Err(ProtocolError::Timeout) => {}
             _ => {}
         };
 
-        // timeout payload
         let attack_request = Self::build_timeout_request(target, timeouts)?;
         let attack_request = Self::apply_detected_port(attack_request, detected);
+        // let mut diff = false;
 
+        // for i in 0..probes {
+            // timeout payload
         let response =
             Self::send_with_protocol(&detected.protocol, attack_request, timeouts).await?;
 
         Ok(Self::interpret_status(&detected, response.status, target))
+        // }
     }
 
     fn interpret_status(detected: &DetectedProtocol, status: u16, target: &str) -> Option<String> {
@@ -139,11 +137,11 @@ impl TrailMergeTask {
                 "[!+] got expect! {} {} {:?}",
                 detected.protocol, target, detected.port
             )),
-            502 => Some(format!("[?] bad gateway {} {}", detected.protocol, target)),
-            503 => Some(format!(
-                "[?] service unavailable {} {}",
-                detected.protocol, target
-            )),
+            // 502 => Some(format!("[?] bad gateway {} {}", detected.protocol, target)),
+            // 503 => Some(format!(
+            //     "[?] service unavailable {} {}",
+            //     detected.protocol, target
+            // )),
             504 => Some(format!(
                 "[+] gateway timeout! {} {} {:?}",
                 detected.protocol, target, detected.port
