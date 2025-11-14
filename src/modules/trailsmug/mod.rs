@@ -31,7 +31,7 @@ impl TrailSmugTask {
         let target = parse_target(target)?;
         let mut payloads = Vec::with_capacity(3);
 
-        let path = target.path();
+        let path = format!("{}?cb=bbscan&nxoec=kmceo", target.path().to_string());
         let authority = target.authority().unwrap_or("localhost".to_string());
 
         payloads.push(format!(
@@ -261,7 +261,7 @@ impl Task for TrailSmugTask {
             }
         };
 
-        if [301, 302, 403, 404, 429, 502, 503].contains(&baseline_res.status) {
+        if [301, 302, 403, 404, 408, 429, 502, 503].contains(&baseline_res.status) {
             return Ok("".to_string());
         }
 
